@@ -266,7 +266,9 @@ def bq(sql):
         raise KursFehler("Noch nicht mit BigQuery verbunden: zuerst die Zelle «BigQuery verbinden» ausführen.")
     if _bq == "duckdb":
         import re
-        return duckdb.sql(re.sub(r"`" + re.escape(_bq_daten) + r"\.(\w+)`", r"\1", sql)).df()
+        projekt, dataset = _bq_daten.rsplit(".", 1)   # auch `paeckli.orders` ohne Projekt und ohne Backticks, wie auf den Folien
+        muster = r"`?(?:`?" + re.escape(projekt) + r"`?\.)?`?" + re.escape(dataset) + r"`?\.`?(\w+)`?"
+        return duckdb.sql(re.sub(muster, r"\1", sql)).df()
     return _bq.query(sql).to_dataframe()
 
 
