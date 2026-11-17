@@ -545,6 +545,9 @@ def sanity_check(name, df=None):
                 "Manche Kunden kommen mehrfach vor."),
             _ok(r.between(0, 1).all(), "churn_risiko liegt zwischen 0 und 1.", "churn_risiko muss eine Wahrscheinlichkeit sein (0 bis 1)."),
             _ok(r.nunique() > 10, "Die Risiken unterscheiden sich zwischen Kunden.", "Fast alle haben dasselbe Risiko."),
+            _ok((r > 0.99).mean() < 0.3, "Nur wenige Kunden haben ein Risiko von fast 100 %.",
+                f"{(r > 0.99).mean():.0%} der Kunden haben ein Risiko von fast 100 %. Wurde der Logarithmus beim Training von Hand "
+                "gerechnet und hier vergessen? Er gehört als erster Schritt in die Pipeline (FunctionTransformer(np.log1p))."),
             _ok((pd.to_numeric(d["tage_seit_kauf"], errors="coerce") >= 0).all(), "tage_seit_kauf ist nie negativ.",
                 "tage_seit_kauf ist manchmal negativ oder keine Zahl. Datum ohne Uhrzeit nehmen (MAX(invoice_date)::DATE)."),
             _ok(d[["tage_seit_kauf"]].assign(r=r).corr().iloc[0, 1] > 0,
