@@ -498,7 +498,7 @@ def sanity_check(name, df=None):
                 "Manche Kunden kommen mehrfach vor. Gewünscht ist eine Zeile pro Kunde."),
             _ok(tage.between(0, 700).all(), "tage_seit_kauf liegt zwischen 0 und 700.",
                 f"tage_seit_kauf hat unmögliche Werte (von {tage.min():.0f} bis {tage.max():.0f}). Gezählt wird bis zum "
-                "31. August 2025, vom Datum ohne Uhrzeit (MAX(invoice_date)::DATE)."),
+                "31. August 2025, vom Datum ohne Uhrzeit (DATE(MAX(invoice_date)))."),
             _ok((d["frequenz"] >= 1).all() and (d["umsatz"] > 0).all(), "frequenz und umsatz sind positiv.",
                 "frequenz oder umsatz ist bei manchen Kunden null oder negativ."),
             _ok(d["customer_id"].notna().all() and TESTKONTO not in set(d["customer_id"]),
@@ -547,9 +547,10 @@ def sanity_check(name, df=None):
             _ok(r.nunique() > 10, "Die Risiken unterscheiden sich zwischen Kunden.", "Fast alle haben dasselbe Risiko."),
             _ok((r > 0.99).mean() < 0.3, "Nur wenige Kunden haben ein Risiko von fast 100 %.",
                 f"{(r > 0.99).mean():.0%} der Kunden haben ein Risiko von fast 100 %. Wurde der Logarithmus beim Training von Hand "
-                "gerechnet und hier vergessen? Er gehört als erster Schritt in die Pipeline (FunctionTransformer(np.log1p))."),
+                "gerechnet und hier vergessen? Er gehört als erster Schritt in die Pipeline (FunctionTransformer(np.log1p)). "
+                "Oder ist es ein sehr tiefer Baum, der auswendig gelernt hat?"),
             _ok((pd.to_numeric(d["tage_seit_kauf"], errors="coerce") >= 0).all(), "tage_seit_kauf ist nie negativ.",
-                "tage_seit_kauf ist manchmal negativ oder keine Zahl. Datum ohne Uhrzeit nehmen (MAX(invoice_date)::DATE)."),
+                "tage_seit_kauf ist manchmal negativ oder keine Zahl. Datum ohne Uhrzeit nehmen (DATE(MAX(invoice_date)))."),
             _ok(d[["tage_seit_kauf"]].assign(r=r).corr().iloc[0, 1] > 0,
                 "Wer länger nicht gekauft hat, hat eher ein höheres Risiko.",
                 "Seltsam: Wer länger nicht gekauft hat, hat ein tieferes Risiko. Richtung vertauscht?"),
