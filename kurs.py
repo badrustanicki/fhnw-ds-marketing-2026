@@ -35,58 +35,7 @@ _team_dir = None
 
 
 class KursFehler(Exception):
-    """Fehler mit einer verständlichen Meldung, ohne langen Python-Fehlertext."""
-
-
-def _blocked(e):
-    """duckdb 2.x: Ein duckdb.execute(...), dessen Ergebnis nicht ganz abgeholt wurde (z. B. nur .fetchone()),
-    blockiert alle weiteren Abfragen mit «Resource In Use»."""
-    return (isinstance(e, getattr(duckdb, "ResourceInUseException", ())) or "Resource In Use" in str(e)
-            or "unfinished result" in str(e))
-
-
-def _short_message(shell, etype, value, tb, tb_offset=None):
-    print(f"⚠️ {value}")
-
-
-def _hint(e):
-    """Kurzer Hinweis zu Fehlern, die Gemini-Code oft macht, sonst None."""
-    s = str(e)
-    if isinstance(e, AttributeError) and "fetchone" in s:
-        return "Mit duckdb 2 gibt es .fetchone() nicht mehr. Nehmt .fetchall() oder .df(), z. B. duckdb.sql(\"...\").fetchall()[0]."
-    if isinstance(e, getattr(duckdb, "CatalogException", ())) and "Table with name" in s and "does not exist" in s:
-        return ("Tabelle nicht gefunden. Steht im Code duckdb.connect(...)? Dann überall duckdb.sql(...) nehmen: Eine neue "
-                "Verbindung sieht die Kurs-Tabellen nicht. Sonst die Setup- und die Aufholen-Zelle nochmals ausführen.")
-    if "bigquery.jobs.create" in s or ("Access Denied" in s and "Project" in s) or "Not found: Project" in s:
-        return ("BigQuery: Die Projekt-ID stimmt nicht, oder BigQuery ist in eurem Projekt noch nicht eingerichtet. "
-                "ID in der Cloud Console prüfen (oben links auf das Projekt klicken), eintragen und «BigQuery verbinden» "
-                "nochmals ausführen.")
-    if "Not found: Table" in s or "Not found: Dataset" in s:
-        return ("BigQuery: Tabelle nicht gefunden. Den ganzen Namen in Backticks schreiben, wie in der Tabelle oben, "
-                "z. B. `projekt.paeckli.orders`.")
-    return None
-
-
-def _with_duckdb_hint(showtraceback):
-    """Fehleranzeige im Notebook: Ist DuckDB blockiert, wird das alte Ergebnis abgebrochen und ein kurzer Hinweis
-    gezeigt. Alle anderen Fehler erscheinen wie gewohnt, bei häufigen Fehlern mit einem Hinweis darunter. (Auch Fehler
-    beim Anzeigen eines duckdb.sql-Ergebnisses laufen hier durch, darum nicht über set_custom_exc.)"""
-    def show(exc_tuple=None, *args, **kwargs):
-        wert = (exc_tuple or sys.exc_info())[1]
-        if wert is None or not _blocked(wert):
-            r = showtraceback(exc_tuple, *args, **kwargs)
-            if wert is not None and _hint(wert):
-                print("💡", _hint(wert))
-            return r
-        try:
-            duckdb.abort()      # gibt es erst ab duckdb 2.0
-        except Exception:
-            pass
-        print("⚠️ DuckDB war blockiert: Ein früheres duckdb.execute(...) wurde nicht fertig abgeholt (z. B. nur "
-              ".fetchone()). Ich habe es abgebrochen. Steht unten kein Ergebnis, führt die Zelle nochmals aus. "
-              "Tipp: Abfragen immer mit duckdb.sql(\"...\").df() oder duckdb.sql(\"...\").fetchall().")
-    show.kurs = True
-    return show
+    """Fehler aus kurs.py mit einer Meldung auf Deutsch. Wird wie jeder Python-Fehler ganz angezeigt."""
 
 
 def _number(x):
@@ -103,17 +52,6 @@ def _fetch(pfad):
     os.makedirs(os.path.dirname(pfad) or ".", exist_ok=True)
     urllib.request.urlretrieve(BASIS_URL + pfad, pfad)
     return pfad
-
-
-def _install_messages():
-    """Im Notebook: kurze Fehlermeldungen und Hinweise statt langer Python-Fehlertexte."""
-    try:
-        ip = get_ipython()  # noqa: F821 (nur im Notebook)
-        ip.set_custom_exc((KursFehler,), _short_message)
-        if not getattr(ip.showtraceback, "kurs", False):
-            ip.showtraceback = _with_duckdb_hint(ip.showtraceback)
-    except NameError:
-        pass
 
 
 def _local_data():
@@ -135,7 +73,6 @@ def start(team=0, basis_url="", code="", portal_url=""):
     BASIS_URL = basis_url or BASIS_URL
     CODE = (code or "").strip().upper()
     PORTAL_URL = (os.environ.get("KURS_PORTAL") or portal_url or "").rstrip("/")   # KURS_PORTAL: nur für Tests
-    _install_messages()
     _local_data()
     print("✅ Bereit.")
     print("   Team:", TEAM if TEAM else "noch nicht gesetzt (oben eintragen und das Setup nochmals ausführen)")
@@ -199,7 +136,6 @@ def connect_bigquery(zugang, daten):
     Notfall: zugang = "offline" lässt bq() über eine Kopie derselben Tabellen laufen (von GitHub, ohne Google)."""
     global _bq, _bq_daten
     zugang, _bq_daten = (zugang or "").strip(), daten
-    _install_messages()
     schluessel = _course_key(zugang)
     offline = zugang.lower() == "offline"
     if offline or os.environ.get("KURS_TEST"):   # ohne Google: bq() läuft über die interne Kopie derselben Tabellen
@@ -233,7 +169,7 @@ def connect_bigquery(zugang, daten):
             if not ("credential propagation" in str(e) or "MessageError" in type(e).__name__):
                 raise
             # Bekannter Colab-Fehler: Die Anmeldung kommt nicht im Notebook an. Zweiter Weg mit Link und Code.
-            print("⚠️ Die Colab-Anmeldung hat nicht geklappt (bekannter Google-Fehler). Zweiter Weg:\n"
+            print(f"⚠️ Die Colab-Anmeldung hat nicht geklappt (bekannter Google-Fehler: {type(e).__name__}: {e}). Zweiter Weg:\n"
                   "   1. Den Link unten öffnen, mit demselben Google-Konto anmelden, alles erlauben.\n"
                   "   2. Den angezeigten Code kopieren und unten ins Feld einfügen, Enter.")
             try:
@@ -251,7 +187,7 @@ def connect_bigquery(zugang, daten):
     except Exception as e:
         if schluessel and ("invalid_grant" in str(e) or "Invalid JWT" in str(e) or "401" in str(e)):
             raise KursFehler("Der Kurs-Schlüssel gilt nicht mehr (er war nur für den Kurstag). Ohne Schlüssel: "
-                             "eigenes Google-Cloud-Projekt anlegen und dessen Projekt-ID eintragen.") from None
+                             "eigenes Google-Cloud-Projekt anlegen und dessen Projekt-ID eintragen.")
         raise
     if offline:
         print(f"✅ Offline-Kopie der Kursdaten geladen: bq(\"...\") funktioniert wie gewohnt. `{daten}.orders` hat {_number(n)} Zeilen.")
@@ -309,10 +245,10 @@ def _portal(method, path, payload=None):
             detail = None
         if isinstance(detail, dict) and "problems" in detail:
             detail = " ".join(detail["problems"])
-        raise KursFehler(detail or f"Das Kurs-Portal meldet Fehler {e.code}.") from None
+        raise KursFehler(detail or f"Das Kurs-Portal meldet Fehler {e.code}.")
     except urllib.error.URLError as e:
         raise KursFehler(f"Das Kurs-Portal ist nicht erreichbar ({e.reason}). Nochmals versuchen; "
-                         "wenn es so bleibt, sagt es der Kursleitung.") from None
+                         "wenn es so bleibt, sagt es der Kursleitung.")
 
 
 def _json_rows(d):
@@ -335,7 +271,7 @@ def team_folder():
             drive.mount("/content/drive")
         except Exception as e:
             raise KursFehler(f"Google Drive ist nicht verbunden ({e}). Diese Zelle nochmals ausführen, im Dialog "
-                             "euer Google-Konto wählen und alles zulassen.") from None
+                             "euer Google-Konto wählen und alles zulassen.")
         root = "/content/drive/MyDrive"
     d = os.path.join(root, f"Paeckli Team {TEAM}")
     if not os.path.isdir(d):
@@ -446,7 +382,7 @@ def _df(x):
                 return v.df()
             raise KursFehler(f"Keine Tabelle «{x}» gefunden, weder in DuckDB noch als DataFrame. Heisst sie bei euch "
                              f"anders? Dann den DataFrame direkt übergeben, z. B. sanity_check(\"{x}\", eure_tabelle) "
-                             f"oder save(eure_tabelle, \"{x}\").") from None
+                             f"oder save(eure_tabelle, \"{x}\").")
     return x.df()
 
 
@@ -708,7 +644,7 @@ def load_results(round="pilot"):
         try:
             df = pd.DataFrame(_portal("GET", f"/api/team/results/{round}")["results"])
         except KursFehler as e:
-            raise KursFehler(f"Kein Ergebnis für «{round}»: {e}") from None
+            raise KursFehler(f"Kein Ergebnis für «{round}»: {e}")
         df["customer_id"] = df["customer_id"].astype(str)
         print(f"✅ Ergebnis «{round}»: {len(df)} Kunden. Spalten: {', '.join(df.columns)}.")
         return df
