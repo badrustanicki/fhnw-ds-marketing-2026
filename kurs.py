@@ -16,7 +16,7 @@ import pandas as pd
 __all__ = ["start", "save", "catch_up", "reference_model", "sanity_check",
            "team_folder", "STICHTAG", "connect_bigquery", "bq"]
 TEAM = 0
-BASIS_URL = "https://raw.githubusercontent.com/badrustanicki/fhnw-ds-marketing-2026/main/"   # start() kann es überschreiben
+BASIS_URL = os.environ.get("KURS_BASIS_URL") or "https://raw.githubusercontent.com/badrustanicki/fhnw-ds-marketing-2026/main/"   # Kursmaterial; start() kann es überschreiben, KURS_BASIS_URL nur für Tests
 _geladen = False   # interne Kopie der Kursdaten geladen?
 STICHTAG = "2025-08-31"
 TESTKONTO = "K00001"
@@ -96,16 +96,13 @@ def _course_key(text):
     if not t:
         return None
     if re.fullmatch(r"[A-Za-z0-9_-]{342}", t):
-        try:
-            return _key_from_primes(t)
-        except Exception:
-            return None
+        return _key_from_primes(t)   # Fehler hier (z. B. fehlendes Paket) sollen sichtbar sein
     try:
         if not t.startswith("{"):
             import base64
             t = base64.b64decode(t + "=" * (-len(t) % 4)).decode()
         d = json.loads(t)
-    except Exception:
+    except ValueError:   # kein Base64 und kein JSON: dann ist es kein Schlüssel, sondern z. B. eine Projekt-ID
         return None
     return d if isinstance(d, dict) and d.get("type") == "service_account" else None
 
@@ -183,7 +180,7 @@ def bq(sql):
     if _bq == "duckdb":
         import re
         projekt, dataset = _bq_daten.rsplit(".", 1)   # auch `paeckli.orders` ohne Projekt und ohne Backticks, wie auf den Folien
-        muster = r"`?(?:`?" + re.escape(projekt) + r"`?\.)?`?" + re.escape(dataset) + r"`?\.`?(\w+)`?"
+        muster = r"(?<![\w@.%'\"-])`?(?:`?" + re.escape(projekt) + r"`?\.)?`?" + re.escape(dataset) + r"`?\.`?(\w+)`?"
         return duckdb.sql(re.sub(muster, r"\1", sql)).df()
     return _bq.query(sql).to_dataframe()
 
@@ -235,27 +232,19 @@ def team_folder():
     return d
 
 
-def _reload():
-    """Colab sieht neue Dateien anderer Personen manchmal erst nach einem erneuten Verbinden."""
-    if not os.environ.get("KURS_DRIVE"):
-        from google.colab import drive
-        drive.mount("/content/drive", force_remount=True)
-
-
 def _read(pfad):
     return pd.read_parquet(pfad) if pfad.endswith(".parquet") else pd.read_csv(pfad, dtype={"customer_id": str})
 
 
 def save(df, name):
-    """Speichert eine Tabelle (DataFrame oder Name einer DuckDB-Tabelle) im Team-Ordner,
-    damit die nächsten Notebooks sie laden können."""
+    """Speichert eine Tabelle (DataFrame) als Abgabe im Team-Ordner auf Google Drive."""
     df = _df(df)
     pfad = os.path.join(team_folder(), name + (".parquet" if name == "orders_clean" else ".csv"))
     if pfad.endswith(".parquet"):
         df.to_parquet(pfad, index=False)
     else:
         df.to_csv(pfad, index=False)
-    print(f"✅ Gespeichert: {name} ({_number(len(df))} Zeilen) im Ordner «Paeckli Team {TEAM}».")
+    print(f"✅ Gespeichert: {name} ({_number(len(df))} {'Zeile' if len(df) == 1 else 'Zeilen'}) im Ordner «Paeckli Team {TEAM}».")
 
 
 AUFHOLEN = {  # Name -> Spalten, die mindestens da sein müssen
@@ -268,21 +257,20 @@ AUFHOLEN = {  # Name -> Spalten, die mindestens da sein müssen
 
 
 def catch_up(name, eigene=True):
-    """Lädt euer Ergebnis aus dem Team-Ordner. Fehlt es oder ist es unvollständig: das Musterergebnis.
-    Die Tabelle steht danach auch in DuckDB unter ihrem Namen zur Verfügung."""
+    """Lädt ein Ergebnis: mit eigene=True eures aus dem Team-Ordner (falls vorhanden und vollständig),
+    sonst das Musterergebnis aus dem Kursmaterial."""
+    if name not in AUFHOLEN:
+        raise KursFehler(f"«{name}» gibt es nicht. Möglich sind: {', '.join(AUFHOLEN)}.")
     datei = name + (".parquet" if name == "orders_clean" else ".csv")
     df, quelle = None, "Musterergebnis"
     if eigene and TEAM:
-        try:
-            pfad = os.path.join(team_folder(), datei)
-            if os.path.exists(pfad):
-                df, quelle = _read(pfad), "euer Ergebnis"
-                fehlt = [c for c in AUFHOLEN[name] if c not in df.columns]
-                if fehlt:
-                    print(f"⚠️ In eurem {datei} fehlen die Spalten {fehlt}. Ich nehme das Musterergebnis.")
-                    df, quelle = None, "Musterergebnis"
-        except KursFehler as e:
-            print(f"⚠️ {e}\n   Ich nehme das Musterergebnis.")
+        pfad = os.path.join(team_folder(), datei)
+        if os.path.exists(pfad):
+            df, quelle = _read(pfad), "euer Ergebnis"
+            fehlt = [c for c in AUFHOLEN[name] if c not in df.columns]
+            if fehlt:
+                print(f"⚠️ In eurem {datei} fehlen die Spalten {fehlt}. Ich nehme das Musterergebnis.")
+                df, quelle = None, "Musterergebnis"
     if df is None:
         df = _read(_fetch(f"aufholen/{datei}"))
     if "invoice_date" in df.columns:

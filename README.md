@@ -10,4 +10,4 @@ Notebooks für den Kurstag im FHNW CAS Data Driven Marketing. Die Daten sind syn
 | 4 · Kampagne | [öffnen](https://colab.research.google.com/github/badrustanicki/fhnw-ds-marketing-2026/blob/main/4_kampagne.ipynb) |
 | Zusatz · Empfehlungen | [öffnen](https://colab.research.google.com/github/badrustanicki/fhnw-ds-marketing-2026/blob/main/anhang_empfehlungen.ipynb) |
 
-Nach dem Öffnen: *Datei > Kopie in Drive speichern*, dann die Setup-Zelle ausführen. Notebooks 1 bis 3: den Kurs-Schlüssel aus dem Chat bei `SCHLUESSEL` einfügen.
+Nach dem Öffnen: *Datei > Kopie in Drive speichern*, dann die Setup-Zelle ausführen. Notebooks 1 bis 3 und der Anhang: den Kurs-Schlüssel aus dem Chat bei `SCHLUESSEL` einfügen.
