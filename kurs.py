@@ -2,32 +2,23 @@
 
 Die Notebooks laden diese Datei im Setup. Ihr müsst hier nichts ändern.
 
-    start(team, basis_url)          Daten laden (Tabellen orders, products, customers in DuckDB)
-    start(team, basis_url, code=…)  dazu mit dem Kurs-Portal verbinden (Notebook 4): Einreichen ohne Google Drive
-    connect_bigquery(projekt, daten)  bei Google anmelden, BigQuery mit eurem Projekt verbinden (Notebook 1)
+    start(team, basis_url)          Teamnummer merken (für die Abgabe in den Team-Ordner)
+    connect_bigquery(zugang, daten) BigQuery verbinden: Kurs-Schlüssel, eigene Projekt-ID oder "offline"
     bq(sql)                         BigQuery-Abfrage ausführen, Ergebnis als Tabelle (DataFrame)
     save(df, name)             Ergebnis im Team-Ordner auf Google Drive ablegen
     catch_up(name)                  Ergebnis des letzten Blocks laden (eures oder das Musterergebnis)
     sanity_check(name, df)             automatische Plausibilitätsprüfung
-    validate(df, round="pilot")     Einreichung prüfen, gratis und beliebig oft
-    submit(df, round="pilot")       Einreichung abgeben, genau einmal pro Runde
-    load_results(round="pilot")     Ergebnis einer Runde laden, sobald die Kursleitung es freigegeben hat
-    submit_estimate(estimate, ci_low, ci_high)   Schätzung für Preis 2 abgeben
 """
-import os, sys, glob, json, datetime as dt, urllib.error, urllib.request
+import os, sys, json, urllib.request
 import duckdb
 import pandas as pd
 
-__all__ = ["start", "save", "catch_up", "reference_model", "sanity_check", "validate", "submit", "load_results", "submit_estimate",
+__all__ = ["start", "save", "catch_up", "reference_model", "sanity_check",
            "team_folder", "STICHTAG", "connect_bigquery", "bq"]
 TEAM = 0
 BASIS_URL = "https://raw.githubusercontent.com/badrustanicki/fhnw-ds-marketing-2026/main/"   # start() kann es überschreiben
 _geladen = False   # interne Kopie der Kursdaten geladen?
-CODE = ""          # Team-Code fürs Kurs-Portal. Leer: Einreichen und Ergebnisse laufen über Google Drive.
-PORTAL_URL = ""
 STICHTAG = "2025-08-31"
-PILOT_MAX = 600
-ARMS = ("control", "email", "email_discount")
 TESTKONTO = "K00001"
 NICHT_PRODUKTE = ("POST", "DOT", "BANK", "M", "S")
 DATEN = ("orders", "products", "customers")
@@ -65,24 +56,13 @@ def _local_data():
     _geladen = True
 
 
-def start(team=0, basis_url="", code="", portal_url=""):
-    """Setzt die Teamnummer (für Einreichungen in Notebook 4) und lädt die Daten für die Prüfungen.
-    Mit code (Team-Code) laufen Einreichen und Ergebnisse über das Kurs-Portal statt über Google Drive."""
-    global TEAM, BASIS_URL, _team_dir, CODE, PORTAL_URL
+def start(team=0, basis_url=""):
+    """Merkt sich die Teamnummer (für die Abgabe in den Team-Ordner) und die Adresse des Kursmaterials."""
+    global TEAM, BASIS_URL, _team_dir
     TEAM, _team_dir = int(team or 0), None
     BASIS_URL = basis_url or BASIS_URL
-    CODE = (code or "").strip().upper()
-    PORTAL_URL = (os.environ.get("KURS_PORTAL") or portal_url or "").rstrip("/")   # KURS_PORTAL: nur für Tests
-    _local_data()
     print("✅ Bereit.")
     print("   Team:", TEAM if TEAM else "noch nicht gesetzt (oben eintragen und das Setup nochmals ausführen)")
-    if CODE:
-        if not PORTAL_URL:
-            raise KursFehler("Die Adresse des Kurs-Portals fehlt. CODE leer lassen: dann läuft alles über Google Drive.")
-        name = _portal("GET", "/api/team")["team"]
-        print(f"✅ Mit dem Kurs-Portal verbunden: {name}. Einreichen und Ergebnisse laufen über das Portal.")
-        if TEAM and name != f"Team {TEAM}":
-            print(f"⚠️ Der Code gehört zu «{name}», oben steht Team {TEAM}. Stimmt der Code?")
 
 
 # ---------------- BigQuery ----------------
@@ -227,33 +207,6 @@ try:
     get_ipython().register_magic_function(_bigquery_cell, "cell", "bigquery")
 except NameError:
     pass   # ohne IPython (Skript): nur bq()
-
-
-# ---------------- Kurs-Portal ----------------
-def _portal(method, path, payload=None):
-    """Ruft das Kurs-Portal auf und gibt die Antwort zurück. Fehler kommen als kurze deutsche Meldung."""
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(PORTAL_URL + path, data=data, method=method,
-                                 headers={"Content-Type": "application/json", "X-Team-Key": CODE})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        try:
-            detail = json.loads(e.read().decode()).get("detail")
-        except ValueError:
-            detail = None
-        if isinstance(detail, dict) and "problems" in detail:
-            detail = " ".join(detail["problems"])
-        raise KursFehler(detail or f"Das Kurs-Portal meldet Fehler {e.code}.")
-    except urllib.error.URLError as e:
-        raise KursFehler(f"Das Kurs-Portal ist nicht erreichbar ({e.reason}). Nochmals versuchen; "
-                         "wenn es so bleibt, sagt es der Kursleitung.")
-
-
-def _json_rows(d):
-    return [{k: (None if v is None or (isinstance(v, float) and pd.isna(v)) else v) for k, v in r.items()}
-            for r in d.to_dict("records")]
 
 
 # ---------------- Google Drive: ein Ordner pro Team ----------------
@@ -497,182 +450,3 @@ def sanity_check(name, df=None):
     else:
         raise KursFehler(f"Für «{name}» gibt es keine Prüfung.")
     return all(alles)
-
-
-# ---------------- Kampagne: prüfen, einreichen, Ergebnisse ----------------
-def _rows(df):
-    if not isinstance(df, pd.DataFrame):
-        df = df.df()
-    d = df.copy()
-    for k in ("rec_1", "rec_2", "rec_3"):
-        if k not in d.columns:
-            d[k] = None
-    d = d[["customer_id", "arm", "rec_1", "rec_2", "rec_3"]].astype(object)
-    d["customer_id"] = d["customer_id"].astype(str).str.strip()
-    d["arm"] = d["arm"].astype(str).str.strip().str.lower()
-    for k in ("rec_1", "rec_2", "rec_3"):
-        d[k] = [None if v is None or pd.isna(v) or str(v).strip().lower() in ("", "nan", "none") else str(v).strip()
-                for v in d[k]]
-    return d
-
-
-def _submitted(round):
-    return sorted(glob.glob(os.path.join(team_folder(), f"{round}_einreichung_*.csv")))
-
-
-def _check_submission(df, round):
-    """Gleiche Regeln wie bei der Bewertung, nur ohne die versteckte Wahrheit. Gibt (Tabelle, Probleme, Hinweise)."""
-    problems, notes = [], []
-    if round not in ("pilot", "rollout"):
-        return None, [f"Unbekannte Runde «{round}». Erlaubt: pilot, rollout."], notes
-    if df is None or len(df) == 0:
-        return None, ["Die Tabelle ist leer."], notes
-    if not {"customer_id", "arm"} <= set(df.columns):
-        return None, ["Die Tabelle braucht die Spalten customer_id, arm, rec_1, rec_2, rec_3."], notes
-    d = _rows(df)
-    _local_data()
-    kunden = set(duckdb.sql("SELECT customer_id FROM customers").df()["customer_id"]) - {TESTKONTO}
-    codes = set(duckdb.sql("SELECT stock_code FROM products").df()["stock_code"])
-    unknown = sorted(set(d["customer_id"]) - kunden)
-    if unknown:
-        problems.append(f"{len(unknown)} unbekannte customer_id, z. B. {', '.join(unknown[:5])}.")
-    dups = sorted(d.loc[d["customer_id"].duplicated(), "customer_id"].unique())
-    if dups:
-        problems.append(f"{len(dups)} customer_id kommen doppelt vor, z. B. {', '.join(dups[:5])}.")
-    bad_arm = sorted(set(d["arm"]) - set(ARMS))
-    if bad_arm:
-        problems.append(f"Ungültige Werte in arm: {', '.join(bad_arm[:5])}. Erlaubt: {', '.join(ARMS)}.")
-    no_rec = int((d["arm"].isin(["email", "email_discount"]) & d["rec_1"].isna()).sum())
-    if no_rec:
-        problems.append(f"{no_rec} E-Mail-Zeilen ohne Empfehlung in rec_1.")
-    alle_recs = pd.concat([d[k] for k in ("rec_1", "rec_2", "rec_3")]).dropna()
-    bad_codes = sorted(set(alle_recs) - codes)
-    if bad_codes:
-        problems.append(f"{len(bad_codes)} unbekannte Produktcodes, z. B. {', '.join(bad_codes[:5])}.")
-    if round == "pilot" and len(d) > PILOT_MAX:
-        problems.append(f"Der Pilot darf höchstens {PILOT_MAX} Kunden enthalten (ihr habt {len(d)}).")
-    if round == "rollout" and TEAM and not CODE:      # mit Portal prüft das Portal
-        pilot = _submitted("pilot")
-        if pilot:
-            used = set(pd.read_csv(pilot[0], dtype=str)["customer_id"])
-            again = sorted(set(d["customer_id"]) & used)
-            if again:
-                problems.append(f"{len(again)} Kunden waren schon im Pilot, z. B. {', '.join(again[:5])}.")
-    if not (d["arm"] == "control").any():
-        notes.append("Keine Kontrollgruppe: Ihr werdet den Effekt nicht schätzen können.")
-    nonprod = int(alle_recs.isin(NICHT_PRODUKTE).sum())
-    if nonprod:
-        notes.append(f"{nonprod} Empfehlungen sind keine Produkte (z. B. Porto). Ist das Absicht?")
-    return d, problems, notes
-
-
-def _check_all(df, round):
-    """Lokal prüfen; mit Portal zusätzlich beim Portal (Pilot-Kunden im Rollout, Runde offen?)."""
-    d, problems, notes = _check_submission(df, round)
-    if not CODE or problems:
-        return d, problems, notes
-    r = _portal("POST", f"/api/validate/{round}", {"rows": _json_rows(d)})
-    if r["ok"] and not r["round_open"]:
-        r["notes"].append(f"Die Runde «{round}» ist noch nicht offen. Einreichen geht, sobald die Kursleitung sie öffnet.")
-    return d, r["problems"], r["notes"]
-
-
-def validate(df, round="pilot"):
-    """Prüft eine Einreichung. Gratis und beliebig oft."""
-    d, problems, notes = _check_all(df, round)
-    for p in problems:
-        print("❌", p)
-    for n in notes:
-        print("💬", n)
-    if not problems:
-        arms = d["arm"].value_counts().reindex(ARMS, fill_value=0)
-        print(f"✅ Gültig für die Runde «{round}»: {len(d)} Kunden ("
-              + ", ".join(f"{a}: {n}" for a, n in arms.items()) + ").")
-
-
-def submit(df, round="pilot"):
-    """Gibt die Einreichung ab: ans Kurs-Portal oder in den Team-Ordner. Pro Runde genau einmal."""
-    d, problems, notes = _check_all(df, round)
-    if problems:
-        validate(df, round)
-        raise KursFehler("Nicht eingereicht. Bitte zuerst die Probleme oben beheben.")
-    if CODE:
-        return _submit_portal(d, round, notes)
-    if _submitted(round):
-        alt = pd.read_csv(_submitted(round)[0], dtype=str)
-        if set(zip(alt["customer_id"], alt["arm"])) == set(zip(d["customer_id"], d["arm"])):   # z. B. nach «Alle ausführen»
-            print(f"✅ Diese Tabelle ist für die Runde «{round}» schon eingereicht. Alles gut, weiter mit load_results(\"{round}\").")
-            return
-        raise KursFehler(f"Euer Team hat die Runde «{round}» schon eingereicht. Pro Runde gibt es genau eine Einreichung.")
-    if not os.environ.get("KURS_TEST"):
-        antwort = input(f"{len(d)} Kunden für die Runde «{round}» einreichen? Das geht nur einmal. Tippt ja: ")
-        if antwort.strip().lower() not in ("ja", "j", "yes", "y"):
-            print("Nicht eingereicht.")
-            return
-    pfad = os.path.join(team_folder(), f"{round}_einreichung_{dt.datetime.now():%H%M%S}.csv")
-    d.to_csv(pfad, index=False)
-    for n in notes:
-        print("💬", n)
-    print(f"✅ Eingereicht: {len(d)} Kunden für die Runde «{round}». Die Kursleitung wertet aus, "
-          f"danach lädt ihr das Ergebnis mit load_results(\"{round}\").")
-
-
-def _submit_portal(d, round, notes):
-    st = _portal("GET", "/api/team")
-    if round in st["submissions"]:
-        alt = _portal("GET", f"/api/team/results/{round}")["results"]
-        if {(r["customer_id"], r["arm"]) for r in alt} == set(zip(d["customer_id"], d["arm"])):   # z. B. nach «Alle ausführen»
-            print(f"✅ Diese Tabelle ist für die Runde «{round}» schon eingereicht. Alles gut, weiter mit load_results(\"{round}\").")
-            return
-        raise KursFehler(f"Euer Team hat die Runde «{round}» schon eingereicht. Pro Runde gibt es genau eine Einreichung.")
-    if st["rounds"].get(round) != "open":
-        raise KursFehler(f"Die Runde «{round}» ist noch nicht offen. Wartet auf die Ansage und führt die Zelle dann nochmals aus.")
-    if not os.environ.get("KURS_TEST"):
-        antwort = input(f"{len(d)} Kunden für die Runde «{round}» einreichen? Das geht nur einmal. Tippt ja: ")
-        if antwort.strip().lower() not in ("ja", "j", "yes", "y"):
-            print("Nicht eingereicht.")
-            return
-    _portal("POST", f"/api/submit/{round}", {"rows": _json_rows(d)})
-    for n in notes:
-        print("💬", n)
-    print(f"✅ Eingereicht: {len(d)} Kunden für die Runde «{round}». Das Ergebnis ist schon da: load_results(\"{round}\").")
-
-
-def load_results(round="pilot"):
-    """Lädt das Ergebnis einer Runde: eine Zeile pro eingereichtem Kunden, mit dem realisierten Gewinn."""
-    if CODE:
-        try:
-            df = pd.DataFrame(_portal("GET", f"/api/team/results/{round}")["results"])
-        except KursFehler as e:
-            raise KursFehler(f"Kein Ergebnis für «{round}»: {e}")
-        df["customer_id"] = df["customer_id"].astype(str)
-        print(f"✅ Ergebnis «{round}»: {len(df)} Kunden. Spalten: {', '.join(df.columns)}.")
-        return df
-    pfad = os.path.join(team_folder(), f"ergebnis_{round}.csv")
-    if not os.path.exists(pfad):
-        _reload()
-    fehler = os.path.join(team_folder(), f"FEHLER_{round}.txt")
-    if not os.path.exists(pfad) and os.path.exists(fehler):
-        raise KursFehler(open(fehler, encoding="utf-8").read())
-    if not os.path.exists(pfad):
-        raise KursFehler(f"Das Ergebnis für «{round}» ist noch nicht da. Wartet auf die Kursleitung und versucht es dann nochmals.")
-    df = pd.read_csv(pfad, dtype={"customer_id": str})
-    print(f"✅ Ergebnis «{round}»: {len(df)} Kunden. Spalten: {', '.join(df.columns)}.")
-    return df
-
-
-def submit_estimate(estimate, ci_low, ci_high):
-    """Gibt die Schätzung für Preis 2 ab: inkrementeller Gewinn des Rollouts in CHF, mit 95-%-Intervall.
-    Bis zur Auflösung dürft ihr sie noch ändern (einfach nochmals abgeben)."""
-    estimate, ci_low, ci_high = float(estimate), float(ci_low), float(ci_high)
-    if not ci_low <= estimate <= ci_high:
-        raise KursFehler("Die Schätzung muss zwischen ci_low und ci_high liegen.")
-    if CODE:
-        _portal("POST", "/api/estimate", {"estimate": estimate, "ci_low": ci_low, "ci_high": ci_high})
-        print(f"✅ Schätzung abgegeben: {_number(estimate)} CHF, 95-%-Intervall {_number(ci_low)} bis {_number(ci_high)} CHF.")
-        return
-    if not _submitted("rollout"):
-        raise KursFehler("Bitte zuerst den Rollout einreichen.")
-    pd.DataFrame([{"estimate": estimate, "ci_low": ci_low, "ci_high": ci_high}]).to_csv(
-        os.path.join(team_folder(), "schaetzung.csv"), index=False)
-    print(f"✅ Schätzung abgegeben: {_number(estimate)} CHF, 95-%-Intervall {_number(ci_low)} bis {_number(ci_high)} CHF.")
