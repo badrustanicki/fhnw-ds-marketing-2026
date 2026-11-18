@@ -12,6 +12,8 @@ Die Notebooks laden diese Datei im Setup. Ihr müsst hier nichts ändern.
 import os, sys, json, urllib.request
 import duckdb
 import pandas as pd
+if duckdb.sql("SELECT current_setting('enable_progress_bar')").fetchone()[0]:
+    duckdb.sql("SET enable_progress_bar = false")   # kein Fortschrittsbalken über den Tabellen (Colab)
 
 __all__ = ["start", "save", "catch_up", "reference_model", "sanity_check",
            "team_folder", "STICHTAG", "connect_bigquery", "bq"]
