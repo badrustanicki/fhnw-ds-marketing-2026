@@ -15,7 +15,7 @@ import pandas as pd
 if duckdb.sql("SELECT current_setting('enable_progress_bar')").fetchone()[0]:
     duckdb.sql("SET enable_progress_bar = false")   # kein Fortschrittsbalken über den Tabellen (Colab)
 
-__all__ = ["start", "save", "catch_up", "reference_model", "sanity_check",
+__all__ = ["start", "save", "catch_up", "sanity_check",
            "team_folder", "STICHTAG", "connect_bigquery", "bq"]
 TEAM = 0
 BASIS_URL = os.environ.get("KURS_BASIS_URL") or "https://raw.githubusercontent.com/badrustanicki/fhnw-ds-marketing-2026/main/"   # Kursmaterial; start() kann es überschreiben, KURS_BASIS_URL nur für Tests
@@ -282,21 +282,6 @@ def catch_up(name, eigene=True):
     return df
 
 
-
-def reference_model(train_df):
-    """Aufholen in Übung 3: das Modell der Musterlösung (Schritt 3), ohne den Code im Notebook zu zeigen."""
-    import numpy as np
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.model_selection import train_test_split
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import FunctionTransformer, StandardScaler
-    spalten = ["tage_seit_kauf", "frequenz", "umsatz"]
-    train, test = train_test_split(train_df, test_size=0.3, random_state=42)
-    modell = make_pipeline(FunctionTransformer(np.log1p), StandardScaler(), LogisticRegression())
-    modell.fit(train[spalten], train["churn"])
-    test = test.assign(risiko=modell.predict_proba(test[spalten])[:, 1])
-    print("✅ Modell der Musterlösung: modell, train und test (mit risiko) sind bereit.")
-    return modell, train, test
 
 # ---------------- Plausibilitätsprüfungen ----------------
 def _ok(bedingung, gut, schlecht):
