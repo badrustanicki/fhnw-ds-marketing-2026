@@ -19,6 +19,14 @@ __all__ = ["start", "save", "catch_up", "sanity_check",
            "team_folder", "STICHTAG", "connect_bigquery", "bq"]
 TEAM = 0
 TIERE = {1: "🦊 Füchse", 2: "🦉 Eulen", 3: "🦦 Otter", 4: "🐼 Pandas", 5: "🐬 Delfine", 6: "🦁 Löwen"}   # die Zahl ist der Team-Ordner «Paeckli Team N»
+SPRUECHE = {
+    1: "Die schlauen Füchse wittern jeden Churn, bevor er passiert.",
+    2: "Die weisen Eulen sehen auch im Datendunkel klar.",
+    3: "Bei euch ist alles in Otternung.",
+    4: "Die Pandas: das einzige Team, nach dem eine Python-Bibliothek benannt ist.",
+    5: "Die verspielten Delfine tauchen tief in die Daten und kommen mit einem Lächeln wieder hoch.",
+    6: "Löwen brüllen nicht, sie belegen es mit Zahlen.",
+}
 BASIS_URL = os.environ.get("KURS_BASIS_URL") or "https://raw.githubusercontent.com/badrustanicki/fhnw-ds-marketing-2026/main/"   # Kursmaterial; start() kann es überschreiben, KURS_BASIS_URL nur für Tests
 _geladen = False   # interne Kopie der Kursdaten geladen?
 STICHTAG = "2025-08-31"
@@ -68,6 +76,8 @@ def start(team=0, basis_url=""):
     BASIS_URL = basis_url or BASIS_URL
     print("✅ Bereit.")
     print("   Team:", f"{TEAM} {TIERE.get(TEAM, '')}" if TEAM else "noch nicht gewählt (oben auswählen und das Setup nochmals ausführen)")
+    if TEAM in SPRUECHE:
+        print("  ", SPRUECHE[TEAM])
 
 
 # ---------------- BigQuery ----------------
