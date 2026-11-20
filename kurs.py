@@ -2,14 +2,14 @@
 
 Die Notebooks laden diese Datei im Setup. Ihr müsst hier nichts ändern.
 
-    start(team, basis_url)          Teamnummer merken (für die Abgabe in den Team-Ordner)
+    start(team, basis_url)          Team merken (für die Abgabe in den Team-Ordner)
     connect_bigquery(zugang, daten) BigQuery verbinden: Kurs-Schlüssel, eigene Projekt-ID oder "offline"
     bq(sql)                         BigQuery-Abfrage ausführen, Ergebnis als Tabelle (DataFrame)
     save(df, name)             Ergebnis im Team-Ordner auf Google Drive ablegen
     catch_up(name)                  Ergebnis des letzten Blocks laden (eures oder das Musterergebnis)
     sanity_check(name, df)             automatische Plausibilitätsprüfung
 """
-import os, sys, json, urllib.request
+import os, re, sys, json, urllib.request
 import duckdb
 import pandas as pd
 if duckdb.sql("SELECT current_setting('enable_progress_bar')").fetchone()[0]:
@@ -18,6 +18,7 @@ if duckdb.sql("SELECT current_setting('enable_progress_bar')").fetchone()[0]:
 __all__ = ["start", "save", "catch_up", "sanity_check",
            "team_folder", "STICHTAG", "connect_bigquery", "bq"]
 TEAM = 0
+TIERE = {1: "🦊 Füchse", 2: "🦉 Eulen", 3: "🦦 Otter", 4: "🐼 Pandas", 5: "🐬 Delfine", 6: "🦁 Löwen"}   # die Zahl ist der Team-Ordner «Paeckli Team N»
 BASIS_URL = os.environ.get("KURS_BASIS_URL") or "https://raw.githubusercontent.com/badrustanicki/fhnw-ds-marketing-2026/main/"   # Kursmaterial; start() kann es überschreiben, KURS_BASIS_URL nur für Tests
 _geladen = False   # interne Kopie der Kursdaten geladen?
 STICHTAG = "2025-08-31"
@@ -59,12 +60,14 @@ def _local_data():
 
 
 def start(team=0, basis_url=""):
-    """Merkt sich die Teamnummer (für die Abgabe in den Team-Ordner) und die Adresse des Kursmaterials."""
+    """Merkt sich das Team (für die Abgabe in den Team-Ordner) und die Adresse des Kursmaterials.
+    team: die Auswahl aus dem Setup, zum Beispiel «3 🦦 Otter», oder nur die Nummer."""
     global TEAM, BASIS_URL, _team_dir
-    TEAM, _team_dir = int(team or 0), None
+    nr = re.match(r"\d+", str(team))
+    TEAM, _team_dir = int(nr.group()) if nr else 0, None
     BASIS_URL = basis_url or BASIS_URL
     print("✅ Bereit.")
-    print("   Team:", TEAM if TEAM else "noch nicht gesetzt (oben eintragen und das Setup nochmals ausführen)")
+    print("   Team:", f"{TEAM} {TIERE.get(TEAM, '')}" if TEAM else "noch nicht gewählt (oben auswählen und das Setup nochmals ausführen)")
 
 
 # ---------------- BigQuery ----------------
@@ -215,7 +218,7 @@ def team_folder():
     if _team_dir:
         return _team_dir
     if not TEAM:
-        raise KursFehler("Bitte oben im Setup eure Teamnummer eintragen und das Setup nochmals ausführen.")
+        raise KursFehler("Bitte oben im Setup euer Team auswählen und das Setup nochmals ausführen.")
     root = os.environ.get("KURS_DRIVE")  # nur für Tests ausserhalb von Colab
     if not root:
         from google.colab import drive
