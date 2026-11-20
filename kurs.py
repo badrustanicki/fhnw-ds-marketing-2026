@@ -241,8 +241,9 @@ def team_folder():
     d = os.path.join(root, f"Paeckli Team {TEAM}")
     if not os.path.isdir(d):
         raise KursFehler(f"Ordner «Paeckli Team {TEAM}» nicht gefunden. Öffnet den Link zu eurem Team-Ordner, "
-                         "klickt oben auf den Ordnernamen > «Organisieren» > «Verknüpfung hinzufügen» > «Meine Ablage», "
-                         "dann diese Zelle nochmals ausführen.")
+                         "klickt oben auf den Ordnernamen > «Organisieren» > «Verknüpfung hinzufügen» > Reiter «Alle Speicherorte» > "
+                         "«Meine Ablage» anklicken > «Hinzufügen» (englisch: Organize > Add shortcut > All locations > My Drive > Add), "
+                         "dann diese Zelle nochmals ausführen. Im selben Google-Konto wie hier in Colab.")
     _team_dir = d
     return d
 
